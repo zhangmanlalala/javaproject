@@ -1,0 +1,126 @@
+package leetcode_076_minimum_window_subString;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 
+ *  Given a string S and a string T, find the minimum window in S 
+ *  which will contain all the characters in T in complexity O(n).
+
+For example,
+S = "ADOBECODEBANC"
+T = "ABC"
+
+Minimum window is "BANC".
+
+Note:
+If there is no such window in S that covers all characters in T, 
+return the empty string "".
+
+If there are multiple such windows, you are guaranteed that there 
+will always be only one unique minimum window in S. 
+ * 
+ * @author Administrator
+ *
+ */
+public class Solution {
+    public String minWindow(String s, String t) {
+        
+    	if(s == null || s.length() == 0){
+    		return null;
+    	}
+    	
+    	int i=0,j=0;
+    	Map<Character,Integer> map = new HashMap<Character,Integer>();
+    	Map<Character,Integer> map1 = new HashMap<Character,Integer>();
+    	
+    	for(int m=0;m<t.length();m++){
+    		char key = t.charAt(m);
+    		if(map1.containsKey(key)){
+    			int value = map1.get(key);
+    			map1.put(key, value+1);
+    		}else{
+    			map1.put(key, 1);
+    		}
+    	}
+    	
+    	
+    	int minLen = Integer.MAX_VALUE,start=0,end=0;
+    	while(j<s.length()){
+    		
+    		char temp = s.charAt(j);
+    		
+    		if(t.indexOf(temp)!=-1){
+    			if(!map.containsKey(temp)){//如果不包含
+    				map.put(temp, 1);
+    			}else{
+    				int value = map.get(temp);
+    				map.put(temp, value+1);
+    			}
+    			
+    			//j++;
+    			
+    			if(map.size() == map1.size() && isComplement(map,map1)){
+    				while(i<j){
+    					
+    					if(minLen>j-i+1){
+    						minLen = j-i+1;
+    						start = i;
+    						end = j+1;
+    					}
+
+    					char left = s.charAt(i);
+    					if(map.containsKey(left)){
+    						if(map.get(left)>map1.get(left)){
+	    						int key = map.get(left);
+	    						map.put(left, key-1);
+	    						i++;
+    						}else{
+    							break;
+    						}
+    					}else{
+    						i++;
+    					}			
+    				}
+    				
+    				i = j+1;
+    				map.clear();
+    				
+    				
+    			}	
+    			
+    		}
+    		
+			j++;    		  		   		   		
+    	}
+    	
+    	if(start<end){
+    		return s.substring(start, end);
+    	}else{
+    		return "";
+    	}
+    	
+    }
+    
+    
+    public boolean isComplement(Map<Character,Integer> map1,Map<Character,Integer> map2){
+    	
+    	for(Map.Entry<Character, Integer> entry:map1.entrySet()){
+    		char key = entry.getKey();
+    		if(map1.get(key)>=map2.get(key)){
+    			
+    		}else{
+    			return false;
+    		}
+    	}
+    	
+    	return true;
+    }
+    
+    
+    public static void main(String[] args) {
+		System.out.println(new Solution().minWindow("bdab", "ab"));
+	}
+    
+}

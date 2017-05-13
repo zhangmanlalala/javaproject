@@ -1,0 +1,41 @@
+package didi;
+
+import java.util.Scanner;
+
+public class Main {
+	
+	
+	public static void main(String[] args) {
+		Scanner sc = new Scanner(System.in);
+		String line = sc.nextLine();
+		String numStr = sc.nextLine();
+		sc.close();
+		String[] str = line.split(" ");
+		int num = Integer.parseInt(numStr);
+		
+		
+	}
+	
+	
+	public int largestCommonSubstring(String str1,String str2){
+		
+		
+		if(str1==null || str1.length() == 0 || str2==null || str2.length()==0){
+			return 0;
+		}
+		
+		char a = str1.charAt(str1.length()-1);
+		char b = str2.charAt(str2.length()-1);
+		
+		if(a == b){
+			return (1+largestCommonSubstring(str1.substring(0, str1.length()-1),str2.substring(0, str2.length()-1)));
+		}else{
+			int num1 = largestCommonSubstring(str1,str2.substring(0,str2.length()-1));
+			int num2 = largestCommonSubstring(str1.substring(0, str1.length()-1),str2);
+			return Math.max(num1, num2);
+		}
+		
+		
+		
+	}
+}

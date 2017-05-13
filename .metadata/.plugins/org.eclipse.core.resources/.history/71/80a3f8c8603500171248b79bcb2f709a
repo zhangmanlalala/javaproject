@@ -1,0 +1,63 @@
+package Leetcode_reverse_linked_list_II;
+/*
+ *  Reverse a linked list from position m to n. Do it in-place and in one-pass.
+	For example:
+	Given 1->2->3->4->5->NULL, m = 2 and n = 4,	
+	return 1->4->3->2->5->NULL.
+	Note:
+	Given m, n satisfy the following condition:
+	1 ¡Ü m ¡Ü n ¡Ü length of list. 
+ * 
+ * 
+ */
+class ListNode {
+     int val;
+     ListNode next;
+     ListNode(int x) { val = x; }
+}
+public class Solution {
+	
+	
+    public ListNode reverseBetween(ListNode head, int m, int n) {
+    	if(m==n || head==null || head.next==null){
+    		return head;
+    	}
+    	ListNode root = new ListNode(0);
+    	root.next = head;
+    	ListNode temp = root,temp_pre;
+    	ListNode mNode_pre=null;
+    	
+    	int i=0;
+    	while(temp!=null){
+    		temp_pre = temp;
+    		temp = temp.next;
+    		i++;
+    		if(i==m){
+    			mNode_pre = temp_pre;
+    		}else if(i<=n){
+    			mNode_pre.next = temp;
+    			ListNode temp_next = temp.next;
+    			temp.next = mNode;
+    			
+    			temp_pre.next = temp_next;
+    			
+    		}
+    	}    	
+    	
+    	return root.next;
+    	
+    }
+    
+    public static void main(String[] args) {
+		ListNode node1 = new ListNode(3);
+		ListNode node2 = new ListNode(5);
+		node1.next = node2;
+		ListNode temp = new Solution().reverseBetween(node1, 1, 2);
+		while(temp!=null){
+			System.out.println(temp.next);
+		}
+	}
+    
+    
+    
+}

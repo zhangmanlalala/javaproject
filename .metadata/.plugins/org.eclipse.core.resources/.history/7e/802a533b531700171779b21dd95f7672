@@ -1,0 +1,950 @@
+package com.cacheserverdeploy.deploy;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+
+import java.util.Queue;
+
+
+public class Graph {
+	protected Vertex[] vertexlist;//顺序表存储图的顶点集合
+	
+	public static  int servicePrices = 0;
+	
+	public static List<ConsumePoint> consume = new ArrayList<ConsumePoint>();
+	
+	public static int totalBand = 0;//存放所有消费节点需要的带宽
+	
+	public static int totalEdgeNum = 0;//存放总边数
+	
+	public static int totalProvideBand = 0;//存放所有的边能提供的总带宽
+	
+	private static int vertexNum = 0;
+	
+	//用于排序的邻接表
+	public static Map<Integer,Integer> map = new HashMap<Integer,Integer>();
+ 
+	
+	public static List<Edge> edges= new ArrayList<Edge>();
+	public static List<List<Integer>> graph = new ArrayList<List<Integer>>();
+	
+
+	
+	public static void addEdge(int from,int to,int cap,int cost){
+		edges.add(new Edge(from,to,cap,0,cost));//主边
+		edges.add(new Edge(to,from, 0,0,-cost)); //残余边
+		int m = edges.size();
+		graph.get(from).add(m-2);//存放真正的网络边
+		graph.get(to).add(m-1);//存放残余的网络边		
+	}
+	
+	public static void removeEdge(int from,int to){
+		int m = edges.size();
+		graph.get(from).remove((Integer)(m-2));//注意这里删除的是元素，而不是删除下标
+		graph.get(to).remove((Integer)(m-1));//存放残余的网络边		
+		edges.remove(m-1);
+		edges.remove(m-2);
+	}
+	
+	/**
+	 * 
+	 * @param s 代表源点  t代表汇点
+	 * @param t
+	 * @param flow
+	 * @param cost
+	 * @return
+	 */
+	public static int[] father ;//存放父节点
+	public static int[] pos ;//pos中存放以某个节点为终点的边的剩余带宽
+	public static int[] dis;//存放每个顶点到源点的最短路径
+	public static int[] vis;//存放每个顶点是否进入队列
+	
+	public static int flow = 0;
+	public static int cost = 0;
+	
+	/**
+	 * 
+	 * 
+	 * @param s
+	 * @param t
+	 * @param lst 用于存储增广路径
+	 * @return
+	 */
+	public static boolean isSuccess = false;
+
+	public static boolean bellManford(int s,int t,List<Integer> band,Map<Integer,Integer> serverProvide,Map<Integer,Integer> consumeGet){
+		//初始化vis和dis
+		Arrays.fill(dis, Integer.MAX_VALUE);
+		Arrays.fill(vis, 0);//上述两个数组的初始化
+		
+		Queue<Integer> queue = new LinkedList<Integer>();//队列用于存放顶点	
+		queue.add(s);//往队列中加入初始点
+		vis[s] = 1;//标记初始点入队列
+		father[s] = -1;//表示s的父边的索引
+		dis[s] = 0;//表示s到s的距离为0；
+		pos[s] = Integer.MAX_VALUE;//为了求一条路径上的最小剩余带宽而设置的值
+		
+		while(!queue.isEmpty()){
+			
+			int f = queue.peek();//队首元素出队列
+			queue.poll();//弹出队首元素
+			vis[f] = 0;//标记队首元素已经出队列
+			
+			for(int i=0;i<graph.get(f).size();i++){
+				Edge tmp = edges.get(graph.get(f).get(i));//使用邻接表找以f为起点的所有边
+				//如果他的容量大于流过他的带宽，并且如果边tmp的终点v到源点s的距离大于（起点f到终点的距离+tmp.cost）
+				if(tmp.cap>tmp.flow && dis[tmp.v]>(dis[f] + tmp.cost)){//松弛操作
+					
+					dis[tmp.v] = dis[f] + tmp.cost;
+					
+					father[tmp.v] = graph.get(f).get(i);//记录父边
+					
+					pos[tmp.v] = Math.min(pos[f], tmp.cap-tmp.flow);//计算该条边和上一条边残余带宽的最小值
+					
+					if(vis[tmp.v] == 0){//如果变tmp的终点没有在队列中，则将其放入队列
+						vis[tmp.v] = 1;
+						queue.add(tmp.v);
+					}
+				}
+			}				
+		}
+		
+		if(dis[t] == Integer.MAX_VALUE){
+			return false;
+		}
+		
+		
+		Graph.flow = Graph.flow+pos[t];  //总的流量带宽在上一次的基础上加上次增广路径的最小带宽
+		Graph.cost +=dis[t]*pos[t];//dis[t]是将单价作为权重，并且将边上所有单价都加起来了，pos[t]是该条增光边上的最小带宽		
+		//下面这一部分在找到增广路径后，更新残余网路
+		//这里的u不代表顶点，t代表汇点，回过头来找刚刚的增广路径
+		int consumeId = edges.get(father[t]).u;
+		if(consumeGet.containsKey(consumeId)){
+			int comple = consumeGet.get(consumeId);
+			consumeGet.put(consumeId, comple+pos[t]);
+		}else{
+			consumeGet.put(consumeId, pos[t]);
+		}
+		
+		
+		
+		int serverId = 0;
+		
+		for(int u = t; u!=s ; u = edges.get(father[u]).u)  //u一直找u的父边的起点
+	    {  
+			int a = father[u];
+			edges.get(a).flow += pos[t];  //更新正向边的已用流量
+			int b = a^1;
+	        edges.get(b).flow -= pos[t];  //更新残余边的残余容量
+	        
+	        serverId = u;
+	    }  
+		
+		if(serverProvide.containsKey(serverId)){	
+			int com = serverProvide.get(serverId);
+			serverProvide.put(serverId, com+pos[t])	;
+		}else{
+			serverProvide.put(serverId, pos[t]);
+		}
+
+		if(Graph.flow<Graph.totalBand){
+			band.add(pos[t]);//将对应的带宽保存起来
+		}else{//如果最后一次带宽大于Graph.totalBand这里要进行处理
+			band.add(pos[t]);//将对应的带宽保存起来
+			Graph.isSuccess = true;
+		}
+	
+		
+	    return true;  
+											
+	}
+	//重载方法
+	public static boolean bellManford(int s,int t){
+		//初始化vis和dis
+		Arrays.fill(dis, Integer.MAX_VALUE);
+		Arrays.fill(vis, 0);//上述两个数组的初始化
+		
+		Queue<Integer> queue = new LinkedList<Integer>();//队列用于存放顶点	
+		queue.add(s);//往队列中加入初始点
+		vis[s] = 1;//标记初始点入队列
+		father[s] = -1;//表示s的父边的索引
+		dis[s] = 0;//表示s到s的距离为0；
+		pos[s] = Integer.MAX_VALUE;//为了求一条路径上的最小剩余带宽而设置的值
+		
+		while(!queue.isEmpty()){			
+			int f = queue.peek();//队首元素出队列
+			queue.poll();//弹出队首元素
+			vis[f] = 0;//标记队首元素已经出队列
+			
+			for(int i=0;i<graph.get(f).size();i++){
+				Edge tmp = edges.get(graph.get(f).get(i));//使用邻接表找以f为起点的所有边
+				//如果他的容量大于流过他的带宽，并且如果边tmp的终点v到源点s的距离大于（起点f到终点的距离+tmp.cost）
+				if(tmp.cap>tmp.flow && dis[tmp.v]>(dis[f] + tmp.cost)){//松弛操作
+					
+					dis[tmp.v] = dis[f] + tmp.cost;
+					
+					father[tmp.v] = graph.get(f).get(i);//记录父边
+					
+					pos[tmp.v] = Math.min(pos[f], tmp.cap-tmp.flow);//计算该条边和上一条边残余带宽的最小值
+					
+					if(vis[tmp.v] == 0){//如果变tmp的终点没有在队列中，则将其放入队列
+						vis[tmp.v] = 1;
+						queue.add(tmp.v);
+					}
+				}
+			}				
+		}
+		
+		if(dis[t] == Integer.MAX_VALUE){
+			return false;
+		}
+		
+		
+		Graph.flow = Graph.flow+pos[t];  //总的流量带宽在上一次的基础上加上次增广路径的最小带宽
+		Graph.cost +=dis[t]*pos[t];//dis[t]是将单价作为权重，并且将边上所有单价都加起来了，pos[t]是该条增光边上的最小带宽		
+		//下面这一部分在找到增广路径后，更新残余网路
+		//这里的u不代表顶点，t代表汇点，回过头来找刚刚的增广路径
+		
+		for(int u = t; u!=s ; u = edges.get(father[u]).u)  //u一直找u的父边的起点
+	    {  
+			int a = father[u];
+			edges.get(a).flow += pos[t];  //更新正向边的已用流量
+			int b = a^1;
+	        edges.get(b).flow -= pos[t];  //更新残余边的残余容量
+	    }  
+		
+	    return true;  
+											
+	}
+	
+	
+	public static int nearbyNode(int serverId){
+		
+		int num = graph.get(serverId).size();
+		int idx = -1;
+		int max = Integer.MIN_VALUE;
+		
+		for(int i=0;i<num;i++){
+			Edge tmp = edges.get(graph.get(serverId).get(i));//使用邻接表找以f为起点的所有边
+			if(tmp == null){
+				continue;
+			}
+			int linkedNode = tmp.v;
+			if(linkedNode == 0 || linkedNode==Graph.vertexNum-1){//不能往里面加入超级源点和超级汇点
+				continue;
+			}
+			if(!Graph.map.containsKey(linkedNode)){
+				continue;
+			}
+			int linkedNodeWeight = Graph.map.get(linkedNode);
+			if(linkedNodeWeight>max){
+				max = linkedNodeWeight;
+				idx = linkedNode;
+			}
+			
+		}
+		
+		return idx;//idx==-1时代表没找到
+			
+	}
+	
+
+	public static List<Integer> updateServerLocation(List<Integer> serverLocation,List<Integer> sortedKey,Map<Integer,Integer> discard,List<Integer> unComplement){
+		int number  = serverLocation.size();
+		serverLocation.clear();	
+		
+		//先从利用率高的服务器节点中选取一部分
+		int discardNum = 4;
+		if(Graph.vertexNum>=500){
+			discardNum = 5;
+		}
+		int i=0;
+		for(;i<sortedKey.size()-discardNum;i++){
+			int key = sortedKey.get(i);
+			if(discard.containsKey(key) && discard.get(key)>1){
+				continue;
+			}
+			if(!serverLocation.contains(key)){
+				serverLocation.add(key);		
+			}
+		}
+		
+		List<Integer> temp = new ArrayList<Integer>();
+		//将剔除的节点放入容器中标记起来
+		for(;i<sortedKey.size();i++){
+			int key = sortedKey.get(i);
+			temp.add(key);
+			if(discard.containsKey(key)){
+				int n = discard.get(key);
+				discard.put(key, n+1);
+			}else{
+				discard.put(key, 1);
+			}
+		}
+		
+		for(int m=0;m<temp.size()-2;m++){
+			int in = Graph.nearbyNode(temp.get(m));
+			if(in==-1){
+				continue;
+			}
+			if(discard.containsKey(in) && discard.get(in)>0){//初级这里是0
+				continue;//出现过3次都被抛弃了，那就不要他了
+			}
+			if(!serverLocation.contains(in)){
+				serverLocation.add(in);		
+			}
+		}
+		
+		//先将未满足的加入
+		int j=0;
+		for(;j<unComplement.size() && j<number;j++){
+			int id = unComplement.get(j);
+			if(!serverLocation.contains(id)){
+				serverLocation.add(id);
+			}
+		}
+		
+		
+		return serverLocation;
+				
+	}
+	
+	
+	//该次更新，不变服务器个数，只变位置
+	public static List<Integer> updateServerLocationDemo2(List<Integer> serverLocation,int idx){
+		//让服务器的个数减少一个
+/*		for(int i=Graph.serverProvideCopy.size()-1;i>=0;i--){
+			if(i==idx){
+				continue;
+			}
+			serverLocation.add(Graph.serverProvideCopy.get(i));
+			
+		}
+		*/
+		//让服务器的个数减少一个，这是现在的做法
+		for(int i=0;i<Graph.serverProvideCopy.size();i++){
+			if(i==idx){
+				continue;
+			}
+			int top = Graph.serverProvideCopy.get(i);
+			serverLocation.add(top);
+			
+		}
+		
+		return serverLocation;//服务器个数减少了一个
+	}
+	
+	public static int minCost = Integer.MAX_VALUE;
+	public static void anasys(Map<Integer,Integer> consumeGet,Map<Integer,Integer> consumeMap,List<Integer> unComplement){
+		
+		for(Map.Entry<Integer, Integer> entry:consumeGet.entrySet()){
+			int key = entry.getKey();
+			int value1 = entry.getValue();
+			int value2 = Graph.consume.get(consumeMap.get(key)).need;
+			
+			if(value1<value2){
+				unComplement.add(key);
+			}
+		}
+		
+	}
+	
+	
+	public static void searchFinalRoute(Map<List<Integer>,Integer> result,List<Integer> serverLocation){		
+		//result.clear();
+		List<Integer> lst = new ArrayList<Integer>();
+		lst.add(0);//将超级原点加入路径
+		
+		List<Integer> server = graph.get(0);
+		for(int j=0;j<serverLocation.size();j++){
+			Edge edge = edges.get(server.get(j));
+			lst.add(edge.v);
+			dfs(lst,result,edge,Graph.vertexNum-1,edge.flow);
+			lst.remove(lst.size()-1);
+		}
+	}
+	
+	
+	public static void dfs(List<Integer> lst,Map<List<Integer>,Integer> result,Edge edge,int t,int minBand){
+		
+		if(edge.cap==0  || edge.flow==0 || minBand==0){//反向边直接跳出或者已经没流量了，跳出
+			return ;
+		}
+		if(edge.v == t){//如果终点是汇点
+			edge.flow = edge.flow-minBand;
+			//lst.add(t);
+			List<Integer> lstCopy = new ArrayList<Integer>(lst);
+			result.put(lstCopy,minBand);		
+			//lst.remove(lst.size()-1);//保护现场
+			return;
+		}
+		List<Integer>  linkedEdge = graph.get(edge.v);
+		
+		
+		for(int i=0;i<linkedEdge.size();i++){
+				
+			Edge tmp = edges.get(linkedEdge.get(i));//使用邻接表找以f为起点的所有边		
+			minBand = Math.min(minBand,edge.flow);//这句话完全没问题了
+			if(tmp.flow>0 && tmp.cap>0 && minBand>0){//tmp.flow>0 && edge.flow>0
+				int tempMin = Math.min(minBand,tmp.flow);//这句话完全没问题了
+				lst.add(tmp.v);
+				
+				dfs(lst,result,tmp,t,tempMin);
+				
+				edge.flow = edge.flow - tempMin;
+				minBand = minBand - tempMin;//这句话感觉很重要呀，就是不知道对不对
+				lst.remove(lst.size()-1);
+				//minBand = Math.max(minBand, edge.flow);//恢复现场
+							
+			}
+		}
+		
+		
+		
+		
+		
+	}
+	
+	public static void findTrueRoute(List<String> finalResult,Map<List<Integer>,Integer> result,Map<Integer,Integer> consumeMap){
+		StringBuilder sb = new StringBuilder();
+		finalResult.add(result.size()+"");
+
+		for(Map.Entry<List<Integer>, Integer> entry:result.entrySet()){
+			
+			List<Integer> cun = entry.getKey();
+			int bd = entry.getValue();
+			for(int g=1;g<cun.size()-1;g++){
+				int xia = (cun.get(g)-1);//下标要减1
+				sb.append(xia+" ");
+			}
+			sb.append(consumeMap.get(cun.get(cun.size()-2))+" ");
+			sb.append(bd);
+	
+			finalResult.add(sb.toString());
+			
+			sb.delete(0, sb.length());
+			
+		}
+		
+	}
+	
+	public static int loopNum = 0;
+	public static List<Integer> serverProvideCopy = new ArrayList<Integer>();
+	public static List<String> minCost(){
+		long start  = System.currentTimeMillis() ;
+		//初始化服务器的位置，并且维护一个服务器位置概率池
+		List<Map.Entry<Integer, Integer>> infoIds = Graph.sortVertexIndegree();//对节点带宽排序
+		
+		int t = Graph.vertexNum-1;//现在顶点的编号为1到Graph.vertexNum
+		
+		//注意这里先加入汇点的边，再加入源点的边，因为汇点的路径是不用变的，源点路径需要一直随服务器更新而更新
+		//同时,建立一个消费者节点和它相连顶点的映射
+		Map<Integer,Integer> consumeMap = new HashMap<Integer,Integer>();
+		for(ConsumePoint cp:Graph.consume){
+			Graph.addEdge(cp.linkedVertexId, t, cp.need, 0);
+			consumeMap.put(cp.linkedVertexId, cp.id);
+		}
+		
+		//寻找候选服务器节点
+		List<Map.Entry<Integer, Integer>> candidateInfo = Graph.selectCandidateLocation(consumeMap,infoIds);		
+		Map<List<Integer>,Integer> result = new HashMap<List<Integer>,Integer>();
+		List<String> finalResult  = new ArrayList<String>();
+		List<Integer> band = new ArrayList<Integer>();
+		
+		//保存每个服务对外提供的带宽
+	    Map<Integer,Integer> serverProvide = new HashMap<Integer,Integer>();
+	    Map<Integer,Integer> consumeGet = new HashMap<Integer,Integer>();
+	       
+	    //初始化服务器的位置
+    	List<Integer> serverLocation = Graph.initializeServerLocation(candidateInfo);//初始化服务器的位置
+	    
+	    
+	    List<Integer> unComplement = new ArrayList<Integer>();
+    	//List<Integer> discard = new ArrayList<Integer>();
+    	Map<Integer,Integer> discard = new HashMap<Integer,Integer>();
+    	int standard = Graph.consume.size()/2;
+    	
+    	
+    	//第一层循环，找大概服务器的位置
+    	int s = 0;  
+    	int totalLoop1 = 200;
+    	int g1 = 0;
+		while(serverLocation.size()>=standard  && g1<totalLoop1){								
+			/////////////////////
+			/////////////////////
+			/////////////////////
+			//将服务器和超级源点构成的边加入整个网络
+			for(int m=0;m<serverLocation.size();m++){
+				Graph.addEdge(s, serverLocation.get(m), Integer.MAX_VALUE, 0);	
+			}
+			//清理资源
+			serverProvide.clear();
+			consumeGet.clear();
+			band.clear();
+			while(bellManford(s,t,band,serverProvide,consumeGet) && !Graph.isSuccess){
+				
+			}
+											
+			//统计该次循环成功与否，如果成功，返回该次的费用，同时统计全局最优的费用,并且找到路径
+			int nomCost = Integer.MAX_VALUE;
+			if(Graph.isSuccess){
+				int serverNumber = serverLocation.size();
+				int total = Graph.cost+serverNumber*Graph.servicePrices;
+				nomCost = total;
+				if(total<Graph.minCost){					
+					//使用DFS保存实际路径
+					Graph.minCost = total;
+					result.clear();
+					finalResult.clear();
+					Graph.searchFinalRoute(result,serverLocation);
+					Graph.findTrueRoute(finalResult, result, consumeMap);															
+				}
+
+			}		
+			//将之前服务器和超级源点构成的边先从整个网络删除，一定要在这里删除，注意
+			for(int m=serverLocation.size()-1;m>=0;m--){
+				Graph.removeEdge(s, serverLocation.get(m));
+				
+			}	
+			///////////////////////
+			///////////////////////
+			////////////////////////
+				
+			//对上面的结果进行分析，看哪个消费节点没满足条件，并且对每个服务器的供给量进行分析
+			//unComplement.clear();//每次将这个清除掉
+			Graph.anasys(consumeGet,consumeMap,unComplement);	
+			List<Integer> sortedKey = mapSort(serverProvide);
+			
+			if(nomCost!=Integer.MAX_VALUE && nomCost==Graph.minCost){
+				Graph.serverProvideCopy.clear();//先清理，再使用
+				List<Integer> sortedKeycp = new ArrayList<Integer>(sortedKey);
+				//保存该次循环的较优数据，以备下一层循环使用
+				Graph.serverProvideCopy.addAll(sortedKeycp);
+			}
+			
+			//如果执行完下面这一句，服务器节点个数少了，那么此后这个条件以后的都不再执行
+			serverLocation = Graph.updateServerLocation(serverLocation,sortedKey,discard,unComplement);
+								
+			//执行相关清理工作，待下次循环使用
+			Graph.isSuccess = false;			
+			Graph.clear();
+			
+			g1++;		
+			//计时器
+			long now = System.currentTimeMillis();
+			if(now-start >=88500){
+				break;
+			}
+		}
+		
+		long now1 = System.currentTimeMillis();
+		System.out.println("第一层循环已经用的时间"+(now1-start));
+		
+		//第二层循环，找精确服务器的数量	
+		int times = Graph.serverProvideCopy.size()-1;		
+		int g2 = 0;
+		int totalLoop2 = 100;
+		while(times>=0 && g2<totalLoop2){
+			
+			long now2 = System.currentTimeMillis();
+			if(now2-start >=88500){
+				break;
+			}
+			serverLocation.clear();
+			//先减少一个看看
+			serverLocation = Graph.updateServerLocationDemo2(serverLocation,times);
+			/////////////////////
+			/////////////////////
+			//将服务器和超级源点构成的边加入整个网络
+			for(int m=0;m<serverLocation.size();m++){
+				Graph.addEdge(s, serverLocation.get(m), Integer.MAX_VALUE, 0);	
+			}
+			//清理资源
+			serverProvide.clear();
+			consumeGet.clear();
+			result.clear();
+			band.clear();			
+			while(bellManford(s,t) && !Graph.isSuccess){		
+				
+			}			
+			///////////////////////
+			///////////////////////
+			////////////////////////
+			
+			//统计该次循环成功与否，如果成功，返回该次的费用，同时统计全局最优的费用
+			int nomCost = Integer.MAX_VALUE;
+			if(Graph.isSuccess){
+				int serverNumber = serverLocation.size();
+				int total = Graph.cost+serverNumber*Graph.servicePrices;
+				nomCost = total;
+				if(total<Graph.minCost){					
+					//使用DFS保存实际路径
+					Graph.minCost = total;
+					result.clear();
+					finalResult.clear();
+					Graph.searchFinalRoute(result,serverLocation);
+					Graph.findTrueRoute(finalResult, result, consumeMap);															
+				}
+
+			}		
+				
+			//将之前服务器和超级源点构成的边先从整个网络删除，一定要在这里删除，注意
+			for(int m=serverLocation.size()-1;m>=0;m--){
+				Graph.removeEdge(s, serverLocation.get(m));
+				
+			}	
+			//对上面的结果进行分析，看哪个消费节点没满足条件，并且对每个服务器的供给量进行分析
+			
+			if(nomCost!=Integer.MAX_VALUE && nomCost==Graph.minCost){
+				Graph.serverProvideCopy.clear();//先清理，再使用
+				List<Integer> sortedKeycp = new ArrayList<Integer>(serverLocation);
+				//保存该次循环的较优数据，以备下一层循环使用
+				Graph.serverProvideCopy.addAll(sortedKeycp);
+				times--;//这是现在的做法，之前这一步不要
+			}else{
+				
+				times--;
+			}			
+			//执行相关清理工作，待下次循环使用
+			Graph.isSuccess = false;			
+			Graph.clear();	
+			g2++;
+		}
+		long now = System.currentTimeMillis();
+		System.out.println("第二层循环已经用的时间"+(now-start));
+		
+		//第三层循环，服务器个数不变的情况下，替换服务器的位置，看看能不能再减少费用
+		
+		
+		
+		
+		
+		
+		
+		if(Graph.minCost<Integer.MAX_VALUE){
+			
+			System.out.println("寻找成功，得到的最小费用为："+Graph.minCost);
+		}else{
+			System.out.println("寻找失败=====================");
+		}
+		
+		long now3 = System.currentTimeMillis();
+		System.out.println("共耗时："+(now-start));
+		
+		
+		return finalResult;
+	
+		
+    }
+		
+	
+	public static void clear(){
+		//清除上一次迭代每条边的flow信息
+		for(Edge edge:edges){
+			edge.flow = 0;
+		}
+		
+		//每次循环前更新这两个参数
+		Graph.flow = 0;
+		Graph.cost = 0;
+		
+		//清除上一次迭代中pos和father两个数组的元素信息
+		Arrays.fill(Graph.pos,0);
+		Arrays.fill(Graph.father, 0);	
+	}
+	
+	
+	public static List<Integer> mapSort(Map<Integer,Integer> serverProvide){
+		
+		//对每个服务器的供应量进行排序
+		List<Integer> sortedKey = new ArrayList<Integer>();
+		List<Map.Entry<Integer, Integer>> sortedServerProvide = new ArrayList<Map.Entry<Integer, Integer>>(serverProvide.entrySet());
+		Collections.sort(sortedServerProvide,new Comparator<Map.Entry<Integer, Integer>>(){
+
+			@Override
+			public int compare(Entry<Integer, Integer> o1, Entry<Integer, Integer> o2) {
+				// TODO Auto-generated method stub
+				return o2.getValue()-o1.getValue();
+			}
+			
+		});
+		
+		for(int i=0;i<sortedServerProvide.size();i++){
+			int key = sortedServerProvide.get(i).getKey();
+			sortedKey.add(key);
+		}
+		
+		return sortedKey;
+		
+		
+				
+	}
+	    
+	    
+
+	 
+	 public static void initializeGraph(String[] data){
+			if(data == null){
+				System.out.println("数据为空：请检查输入！");
+				return ;
+			}
+			
+			//解析第一行
+			String[] str = data[0].split(" ");
+			Graph.vertexNum = Integer.parseInt(str[0])+2;//之所以加2是因为要加上一个超级源点和一个超级汇点
+			Graph.totalEdgeNum = Integer.parseInt(str[1]);//这个没什么用
+			int consumeNum = Integer.parseInt(str[2]);	
+			
+			//创建邻接表，必须要加上超级源点和超级汇点所占的空间
+			for (int i = 0; i < Graph.vertexNum; i++){
+				Graph.graph.add(new ArrayList<Integer>());
+			}
+			Graph.father = new int[vertexNum];//存放某个节点的父边
+			Graph.pos = new int[vertexNum];//存放某个节点的父边还剩余的带宽
+			Graph.dis = new int[vertexNum];//存放每个节点到超级源点的距离
+			Graph.vis = new int[vertexNum];//存放每个节点是否入队列
+			
+			//解析第三行
+			int serverPrice = Integer.parseInt(data[2]);
+			Graph.servicePrices = serverPrice;
+			
+			//从第5行开始解析节点和边
+			int i=4;//i代表读入的第i条边
+			int id1,id2,left_band,price;
+			String[] str1;
+			while(data[i]!=null && data[i].length()>0){
+				
+				//解析一条边
+				str1 = data[i].split(" ");
+				id1 = Integer.parseInt(str1[0]);//起点
+				id2 =  Integer.parseInt(str1[1]);//终点
+				left_band = Integer.parseInt(str1[2]);//容量
+				price = Integer.parseInt(str1[3]);//价格
+				
+				Graph.totalProvideBand += left_band;
+				//这是一个牵一发而动全身的改变，后面切记
+				id1 = id1+1;//让每个节点的编号加1，从而给编号为0的超级源点腾出位置
+				id2 = id2+1;
+				
+				//插入边,将一条边拆分为两条边，正向边和它的残余边
+				Graph.addEdge(id1,id2,left_band,price);
+				//反向边和它的残余边
+				Graph.addEdge(id2,id1,left_band,price);
+				
+				int everybandPrice = left_band/price;
+				//维护一个邻接表
+				if(Graph.map.containsKey(id1)){
+					int band = Graph.map.get(id1);
+					Graph.map.put(id1, band+everybandPrice);
+				}else{
+					Graph.map.put(id1, everybandPrice);
+				}
+				
+				if(Graph.map.containsKey(id2)){
+					int band = Graph.map.get(id2);
+					Graph.map.put(id2, band+everybandPrice);
+				}else{
+					Graph.map.put(id2, everybandPrice);
+				}
+				
+				i++;
+				
+			}
+						
+			//读消费节点信息
+			i++;
+			int need;
+			while(data[i]!=null && data[i].length()>0){
+			
+					str1 = data[i].split(" ");
+					id1 = Integer.parseInt(str1[0]);
+					id2 =  Integer.parseInt(str1[1]);//id2表示与消费节点相连的顶点
+					id2 = id2+1;//前面将每个顶点的编号加1给超级源点腾出位置，这里也要进行加1做出相应的改变
+					need = Integer.parseInt(str1[2]);
+					ConsumePoint sp = new ConsumePoint(id1, id2, need);
+					consume.add(sp);
+					totalBand +=need;
+					
+					i++;
+					if(i>=data.length){
+						break;
+					}
+				
+		     }
+							
+	}
+	 	 
+	 
+	 public static List<Integer> initializeServerLocation(List<Map.Entry<Integer, Integer>> candidateInfo){	
+	 	List<Integer> serverLocation = new ArrayList<Integer>();	 	
+		int i = 0;
+		for (; i < candidateInfo.size(); i++) { 
+			
+		    Entry<Integer,Integer> ent=candidateInfo.get(i); 
+		    int sortedVertex = ent.getKey();
+		    serverLocation.add(sortedVertex);	
+
+		}	
+			
+		return serverLocation;
+	}
+	 /**
+	  * 计算每个顶点的入度
+	  * @param graph
+	  * @return
+	  */
+	 public static List<Map.Entry<Integer, Integer>> sortVertexIndegree(){		
+			List<Map.Entry<Integer, Integer>> infoIds = new ArrayList<Map.Entry<Integer, Integer>>(  
+					Graph.map.entrySet());  
+			// 对节点入度个数和带宽比例排序
+			Collections.sort(infoIds, new Comparator<Map.Entry<Integer, Integer>>() {  
+			    public int compare(Map.Entry<Integer, Integer> o1,  
+			            Map.Entry<Integer, Integer> o2) {  
+			        return ( o2.getValue()-o1.getValue()); 			    			    	
+			    				    	
+			    }  
+			});  
+			
+			return infoIds;
+	 }
+	 
+	 public static List<Map.Entry<Integer, Integer>> selectCandidateLocation(Map<Integer,Integer> consumeMap,List<Map.Entry<Integer, Integer>> infoIds){
+		 Map<Integer,Integer> candidateServerLocation = new HashMap<Integer,Integer>();
+			
+			for(int i=0;i<infoIds.size();i++){
+				int key = infoIds.get(i).getKey();
+				if(consumeMap.containsKey(key)){
+					int consumeId = consumeMap.get(key);
+					int weight =(int) (infoIds.get(i).getValue()*0.5 + 0.5*Graph.consume.get(consumeId).need);
+					candidateServerLocation.put(key, weight);
+				}
+			}
+			
+			List<Map.Entry<Integer, Integer>> candidateInfo = new ArrayList<Map.Entry<Integer, Integer>>(candidateServerLocation.entrySet());
+			
+			Collections.sort(candidateInfo,new Comparator<Map.Entry<Integer, Integer>>(){
+
+				@Override
+				public int compare(Entry<Integer, Integer> o1, Entry<Integer, Integer> o2) {
+					// TODO Auto-generated method stub
+					return (o2.getValue()-o1.getValue());
+				}
+				
+			});
+			
+			
+			return candidateInfo;
+	 }
+	 
+	 
+	 
+	 
+	  public  static String[] execute(String[] data){
+		  //String[] data = Graph.readData("C:/Users/Administrator/Desktop/Primary/case0.txt");
+		  Graph.initializeGraph(data);
+		  List<String> finalResult = Graph.minCost();	
+		  String[] res= new String[finalResult.size()+1];
+		  res[0] = finalResult.get(0);
+		  res[1] = "";
+		  
+		  for(int n=2;n<res.length;n++){
+			  res[n] = finalResult.get(n-1);
+			  
+		  }
+		/*  
+		  for(String tp:res){
+			  System.out.println(tp);
+		  }*/
+				  
+		  return res;
+	  }
+	  
+	 	 
+		
+}
+
+
+
+
+
+
+
+class ConsumePoint{
+	public int id;  //本身id
+	public int linkedVertexId;  //相连顶点id
+	public int need;//需求量
+	
+	
+	
+	public ConsumePoint(int id, int linkedVertexId, int need) {
+		this.id = id;
+		this.linkedVertexId = linkedVertexId;
+		this.need = need;
+	}
+	public int getId() {
+		return id;
+	}
+	public void setId(int id) {
+		this.id = id;
+	}
+	public int getLinkedVertexId() {
+		return linkedVertexId;
+	}
+	public void setLinkedVertexId(int linkedVertexId) {
+		this.linkedVertexId = linkedVertexId;
+	}
+	public int getNeed() {
+		return need;
+	}
+	public void setNeed(int need) {
+		this.need = need;
+	}
+	 
+}
+
+class Vertex{    //顶点数据结构的定义
+
+	public int number;  //顶点的编号属性
+	
+	public boolean wasVisited; 
+	
+	
+	public Vertex(int number) {	
+		this.number = number;
+	}
+	public boolean isWasVisited() {
+		return wasVisited;
+	}
+	public void setWasVisited(boolean wasVisited) {
+		this.wasVisited = wasVisited;
+	}
+
+
+}
+
+class Edge{
+	int u;//代表起点
+	int v;//代表终点
+	int cost;//该条边的单价
+	int cap;//该条边的总容量
+	int flow;//该条边已使用的流量
+	
+	int next;
+
+	public Edge(int u, int v,int cap,int flow,int cost) {
+		this.u = u;
+		this.v = v;
+		this.cap = cap;
+		this.flow = flow;
+		this.cost = cost;
+	}
+	
+	
+}

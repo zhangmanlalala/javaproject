@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Copy package &apos;_232_Implement_Queue_using_Stacks&apos; to &apos;Leetcode_review/src&apos;&#x0D;&#x0A;- Original project: &apos;LeetCode_classification&apos;&#x0D;&#x0A;- Destination element: &apos;Leetcode_review/src&apos;&#x0D;&#x0A;- Original element: &apos;LeetCode_classification/src/_232_Implement_Queue_using_Stacks&apos;" description="Copy package" destination="=Leetcode_review/src" element1="/src&lt;_232_Implement_Queue_using_Stacks" flags="589830" fragments="1" id="org.eclipse.jdt.ui.copy" policy="org.eclipse.jdt.ui.copyPackages" stamp="1493821288662" version="1.0"/>
+</session>
